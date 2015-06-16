@@ -72,23 +72,26 @@ if opt.network == '' then
   
   word_emb=nn.LookupTable(Vocab_word,opt.dimension)
 
+  mlp1=nn.Sequential()
+  mlp1:add(word_emb)
+  
+  mlp1c=nn.ConcatTable()
+
   mlp11=nn.Sequential()
-  mlp11:add(word_emb)
   kw=2
   mlp11:add(nn.TemporalConvolution(opt.dimension,opt.dimension,kw,1))
   mlp11:add(nn.Tanh())
   mlp11:add(nn.Sum(1))
 
   mlp12=nn.Sequential()
-  mlp12:add(word_emb)
   mlp12:add(nn.Sum(1))
   mlp12:add(nn.Tanh())
 
-  mlp1c=nn.ConcatTable()
+  
   mlp1c:add(mlp11)
   mlp1c:add(mlp12)
-  mlp1=nn.Sequential()
   mlp1:add(mlp1c)
+  
   mlp1:add(nn.JoinTable(1))
 
   mlp2=nn.Sequential()
@@ -110,15 +113,16 @@ if opt.network == '' then
   prla:add(mlp1)
   prla:add(mlp2)
   model:add(prla)
+
+  print('<qa> using model:')
+  print(model)
   -- retrieve parameters and gradients
   parameters,gradParameters = model:getParameters()
   parameters:uniform(-0.08, 0.08)
   -- verbose
-  print('<qa> using model:')
-  print(model)
+  
 
   -- set criterion
-  -- local margin=opt.margin
   crit=nn.MarginRankingCriterion(opt.margin); 
 else 
   mlp1 = torch.load(opt.network)
