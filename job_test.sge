@@ -1,0 +1,47 @@
+#!/bin/bash
+
+### SGE Options
+
+### Set shell for sge job
+#$ -S /bin/bash
+
+### Set queue (short, medium, long, unlimited)
+#$ -l short 
+
+### Set priority (high, low)
+#$ -l high 
+
+### Reschedule in case of node crash
+#$ -r y
+
+### Job name
+#$ -N cre_t_fb_1
+
+## Job information
+
+JOB_HOST=`hostname`
+JOB_DATE=`date`
+env
+echo "================================================================"
+echo JOB_NAME=$JOB_NAME
+echo JOB_ID=$JOB_ID
+echo SGE_TASK_ID=$SGE_TASK_ID
+echo SGE_TASK_FIRST=$SGE_TASK_FIRST
+echo SGE_TASK_LAST=$SGE_TASK_LAST
+echo NSLOTS=$NSLOTS
+echo QUEUE=$QUEUE
+echo SGE_CWD_PATH=$SGE_CWD_PATH
+echo PATH=$PATH
+echo SGE_STDIN_PATH=$SGE_STDIN_PATH
+echo SGE_STDOUT_PATH=$SGE_STDOUT_PATH
+echo SGE_STDERR_PATH=$SGE_STDERR_PATH
+echo SGE_O_HOST=$SGE_O_HOST
+echo SGE_O_PATH=$SGE_O_PATH
+echo "================================================================"
+
+echo "Running job JOB_NAME=$JOB_NAME task SGE_TASK_ID=$SGE_TASK_ID on $JOB_HOST at $JOB_DATE"
+
+### Job commands
+MY_PATH="/share/project/zuyao/src"
+cd $MY_PATH
+../anaconda/bin/python2.7 test.py test
