@@ -1,1 +1,5 @@
-# torch code for question answering with quesiton embedding and answer path embedding
+# torch code for question answering with freebase 
+#method:
+quesiton embedding and answer path embedding
+#method:
+convolutional neural network for quesiton embedding
