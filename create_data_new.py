@@ -68,7 +68,7 @@ def convert_date(value_text):
     return '/'.join(new_date)
 
 def getCandidates(questionEntity,answers=[]):
-    candidates={}
+    candidates=[]
     service_url = 'https://www.googleapis.com/freebase/v1/topic'
     topic_id = questionEntity
     params = {
@@ -89,7 +89,8 @@ def getCandidates(questionEntity,answers=[]):
                 value_text=value['text'].lower()
                 if topic['property'][property]['valuetype']=="datetime":
                     value_text=convert_date(value_text)
-                candidates[value_text]=[property]
+                # candidates[value_text]=[property]
+                candidates.append((value_text,[property]))
                 if value_text in answers and value_text not in myanswers:
                     myanswers.append(value_text)
             for p in value.get('property',[]):
@@ -98,7 +99,8 @@ def getCandidates(questionEntity,answers=[]):
                         v_text=v['text'].lower()
                         if value['property'][p]['valuetype']=="datetime":
                             v_text= convert_date(v_text)
-                        candidates[v_text]=[property,p]
+                        # candidates[v_text]=[property,p]
+                        candidates.append((v_text,[property,p]))
                         if v_text in answers and v_text not in myanswers:
                             myanswers.append(v_text)
             # if 'id' in value and 'text' in value:
@@ -197,23 +199,27 @@ if __name__=="__main__":
     cache={}
     if mode=="test":
         dic={}
-        # with open("../data/webquestions.dev.txt",'r') as fr, open('../data/dev_web_soft.txt','w') as fw, open('../data/dev_web_no_answer_soft.txt','w')\
-        #  as fw2, open('../data/state.dev_web_soft.txt','w') as state:
+        # with open("../data/webquestions.dev.txt",'r') as fr, open('../data/dev_web_soft_list.txt','w') as fw, open('../data/dev_web_no_answer_soft_list.txt','w')\
+        #  as fw2, open('../data/state.dev_web_soft_list.txt','w') as state:
         # with open("../data/webquestions.train_0.8.txt",'r') as fr, open('../data/train_web_soft_0.8.txt','w') as fw, open('../data/train_web_no_answer_soft_0.8.txt','w')\
         #  as fw2, open('../data/state.train_web_soft_0.8.txt','w') as state:
         # with open("../data/QA_triples.txt",'r') as fr, open('../data/train_rev_soft.txt','w') as fw, open('../data/train_rev_no_answer_soft.txt','w')\
         #  as fw2, open('../data/state.train_rev_soft.txt','w') as state:
-        with open("../data/webquestions.test.txt",'r') as fr, open('../data/test_web_soft.txt','w') as fw, open('../data/test_web_no_answer_soft.txt','w')\
-         as fw2, open('../data/state.test_web_soft.txt','w') as state:
+        with open("../data/webquestions.test.txt",'r') as fr, open('../data/test_web_soft_list_low.txt','w') as fw, open('../data/test_web_no_answer_soft_list_low.txt','w')\
+         as fw2, open('../data/state.test_web_soft_list_low.txt','w') as state:
             i=1
             count_has_answers=0
             count_candidates=0
             for line in fr:
-                print i
+                print >> sys.stderr,i
                 question,answers_text,questionEntity=line.strip().split(' # ')
                 answers=json.loads(answers_text.lower().decode('utf-8'))
                 # answers=[answers_text.lower().decode('utf-8').replace('_',' ')]
                 # answers=['/'+answers_text.split('fb:')[1].replace('.','/')]
+                newanswers=[]
+                for answer in answers:
+                    newanswers.append(answer.lower())
+                answers=newanswers
                 try:
                     # questionEntity='/'+questionEntity.split('fb:')[1].replace('.','/')
                     questionEntity='/en/'+questionEntity
@@ -225,35 +231,36 @@ if __name__=="__main__":
                 if candidates:
                     count_candidates+=1
                     if myanswers:
+                        print question,'#',questionEntity.split('/en/')[1]
                         canid=1
                         count_has_answers+=1
                         text.append(question)
-                        text.append(json.dumps(myanswers))
+                        text.append(json.dumps(answers))
                         # text.append(str(canid))
                         print >> fw, ' # '.join(text).encode('utf8')
                         # print correct answers
-                        for key in myanswers:
-                            code=[]
-                            for item in candidates[key]:
-                                code.append(item)
-                            if code:
-                                Qcode=[]
-                                Qcode.append(key)
-                                # Qcode.append(str(canid))
-                                Qcode.append(' '.join(code))
-                                print >> fw, ' # '.join(Qcode).encode('utf8')
-                            canid+=1
+                        # for key in myanswers:
+                        #     code=[]
+                        #     for item in candidates[key]:
+                        #         code.append(item)
+                        #     if code:
+                        #         Qcode=[]
+                        #         Qcode.append(key)
+                        #         # Qcode.append(str(canid))
+                        #         Qcode.append(' '.join(code))
+                        #         print >> fw, ' # '.join(Qcode).encode('utf8')
+                        #     canid+=1
 
                         # print wrong answers
                         for key in candidates:
-                            if key in myanswers:
-                                continue
+                            # if key[0] in myanswers:
+                            #     continue
                             code=[]
-                            for item in candidates[key]:
+                            for item in key[1]:
                                 code.append(item)
                             if code:
                                 Qcode=[]
-                                Qcode.append(key)
+                                Qcode.append(key[0])
                                 # Qcode.append(str(canid))
                                 Qcode.append(' '.join(code))
                                 print >> fw, ' # '.join(Qcode).encode('utf8')

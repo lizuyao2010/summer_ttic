@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/share/project/zuyao/anaconda/bin/python
 
 import sys
 import json

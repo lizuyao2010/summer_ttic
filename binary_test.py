@@ -15,11 +15,11 @@ def encode(text,dic):
     return codes
     # print >> fw, ' '.join(codes)
 
-with open('../data/word2ind_web_soft_0.8.json','r') as fw1, open('../data/relation2ind_web_soft_0.8.json','r') as fw2:
+with open('../data/word2ind_ws_soft.json','r') as fw1, open('../data/relation2ind_ws_soft.json','r') as fw2:
     word2ind=json.load(fw1)
     relation2ind=json.load(fw2)
 
-with open('../data/dev_web_soft.txt','r') as fr, open('../data/dev_web_soft_code.txt','w') as fw:
+with open('../data/test_web_soft_list_low.txt','r') as fr, open('../data/test_ws_soft_code_list_low.txt','w') as fw:
     for line in fr:
         line=line.strip()
         # new question

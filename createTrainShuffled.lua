@@ -61,8 +61,8 @@ end
 
 -- trainData=loadTrainSet("../data/state_2025750.txt","../data/train_all_new.txt")
 -- trainData=loadTrainSet("../data/state_web.txt","../data/train_web.txt")
-trainData=loadTrainSet("../data/state_web_soft_0.8.txt","../data/train_web_soft_0.8_code.txt")
-torch.save('../data/train_random_web_soft_0.8_index.bin',trainData)
+trainData=loadTrainSet("../data/state_web_soft_0.8.glove.txt","../data/train_web_soft_0.8_code_glove.txt")
+torch.save('../data/train_random_web_soft_0.8_index_glove.bin',trainData)
 
 -- torch.save('../data/train_random.bin',trainData)
 

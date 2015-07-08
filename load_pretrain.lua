@@ -9,7 +9,7 @@ local json = require ("dkjson")
 
 
 -- load dictionary
-local dic=io.input('../data/word2ind_web_soft_0.8.json')
+local dic=io.input('../data/word2ind_web_soft_0.8.glove.json')
 local str=io.read("*all")
 local obj, pos, err = json.decode (str, 1, nil)
 if err then
@@ -18,14 +18,15 @@ else
   print ("finish loading dictionary")
 end
 vocabsize=tablelength(obj)
-emb=torch.Tensor(vocabsize,50):uniform(-0.08, 0.08)
+emb=torch.Tensor(vocabsize,100):uniform(-0.08, 0.08)
 
 local f=io.input(arg[1],"rb")
 -- local f = assert(io.open(arg[1], "rb"))
+local d=3115
 local count = 1
 while true do
  local line = io.read()
- print(line)
+ -- print(line)
  if line == nil then break end
  local row=line:split(" ")
  local index=obj[row[1]]
@@ -34,11 +35,15 @@ while true do
  	for i=2,table.getn(row) do
  		emb[index][i-1]=row[i]*0.01
  	end
+ -- else
+ -- 	obj[row[1]]=d
+ -- 	d=d+1
  end
  io.write(string.format("%6d  ", count), "\n")
  count = count + 1
 end
-torch.save('../data/pretrained_word_emb_dev',emb)
+torch.save('../data/pretrained_word_emb_dev_glove',emb)
+-- local obj_str = json.encode (obj, { indent = true })
 
 
 -- -- load dictionary

@@ -23,10 +23,10 @@ local opt = lapp[[
    --coefL1           (default 0)           L1 penalty on the weights
    --coefL2           (default 0)           L2 penalty on the weights
    -t,--threads       (default 8)           number of threads
-   -d,--dimension     (default 64)         dimension of embedding
+   -d,--dimension     (default 150)         dimension of embedding
    -a,--randomSampling   (default false)       randomSampling
    -c,--candidates    (default 2)           number of candidates
-   --margin           (default 1)           margin
+   --margin           (default 4)           margin
    --threshold        (default 0)         threshold
 ]]
 -- fix seed
@@ -51,22 +51,30 @@ if opt.dataset=="web" then
   trainData=torch.load('../data/train_random_web_soft_index.bin')
   Vocab_word=3499
   Vocab_relation=3505
-elseif opt.dataset=="web_new" then
-  trainData=torch.load('../data/train_random_web_soft_index_new.bin')
-  Vocab_word=3501
-  Vocab_relation=3505
+  word_emb_file='../data/pretrained_word_emb'
+  relation_emb_file='../data/pretrained_relation_emb'
+  testFile="../data/test_web_soft_code_list.txt"
+  testDataSize=1918
 elseif opt.dataset=="web_dev" then
   trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
   Vocab_word=3114
   Vocab_relation=3358
+  word_emb_file='../data/pretrained_word_emb_dev_glove'
+  relation_emb_file='../data/pretrained_relation_emb_dev'
+  testFile="../data/dev_web_soft_code_list.txt"
+  testDataSize=717
 elseif opt.dataset=="ws" then
   trainData=torch.load('../data/train_random_ws_soft_index.bin')
   Vocab_word=51230
   Vocab_relation=6769
+  testFile="../data/test_ws_soft_code_list.txt"
+  testDataSize=1918
 else
-  trainData=torch.load('../data/train_random.bin')
-  Vocab=2025750
+  print("no that dataset")
+  return
 end
+outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
+
 if opt.network == '' then
   -- define model to train
   
@@ -85,7 +93,7 @@ if opt.network == '' then
 
   mlp12=nn.Sequential()
   mlp12:add(nn.Sum(1))
-  mlp12:add(nn.Tanh())
+  -- mlp12:add(nn.Tanh())
 
   
   mlp1c:add(mlp11)
@@ -93,11 +101,12 @@ if opt.network == '' then
   mlp1:add(mlp1c)
   
   mlp1:add(nn.JoinTable(1))
+  -- mlp1:add(nn.CAddTable())
 
   mlp2=nn.Sequential()
   mlp2:add(nn.LookupTable(Vocab_relation,opt.dimension*2))
   mlp2:add(nn.Sum(1))
-  mlp2:add(nn.Tanh())
+  -- mlp2:add(nn.Tanh())
 
   prl=nn.ParallelTable();
   prl:add(mlp1); prl:add(mlp2)
@@ -167,13 +176,15 @@ function train(dataset)
          -- local target = sample[2]
          -- local input = {{sample[1],sample[2]},{sample[1],sample[3]}}
          local x=shrink(sample[1])
-         local y=shrink(sample[2])
-         local z=shrink(sample[3])
-         local input = {{x,y},{x,z}}
-         local target = 1
-         inputs[k] = input
-         targets[k] = target
-         k = k + 1
+         if x:size()[1]>1 then
+           local y=shrink(sample[2])
+           local z=shrink(sample[3])
+           local input = {{x,y},{x,z}}
+           local target = 1
+           inputs[k] = input
+           targets[k] = target
+           k = k + 1
+         end
       end
 
       -- create closure to evaluate f(X) and df/dX
@@ -320,79 +331,123 @@ end
 
 
 
-if opt.dataset=="web" then
-  testData = torch.load('../data/test_web_soft_index.bin')
-elseif opt.dataset=="web_new" then
-  testData = torch.load('../data/test_web_soft_index_new.bin')
-elseif opt.dataset=="web_dev" then
-  testData = torch.load('../data/dev_web_soft_index.bin')
-elseif opt.dataset=="ws" then
-  testData = torch.load('../data/test_ws_soft_index.bin')
-else
-  testData = torch.load('../data/test.bin')
+
+function computeF1(goldList,predictedList)
+  -- Assume all questions have at least one answer
+  -- print("gold",goldList)
+  -- print("pred",predictedList)
+  if #goldList==0 then
+    error({mss="gold list may not be empty"})
+  end
+  -- If we return an empty list recall is zero and precision is one
+  if #predictedList==0 then
+    return {0,1,0}
+  end
+  -- It is guaranteed now that both lists are not empty
+  local precision = 0
+  for i,entity in ipairs(predictedList) do
+    for j,gold in ipairs(goldList) do
+      if entity==gold then
+        precision=precision+1
+      end
+    end
+  end
+  precision = precision / #predictedList
+  local recall=0
+  for i,entity in ipairs(goldList) do
+    for j,pred in ipairs(predictedList) do
+      if entity==pred then
+        recall=recall+1
+      end
+    end
+  end
+  recall = recall / #goldList
+  local f1 = 0
+  if precision+recall>0 then
+    f1 = 2*recall*precision / (precision + recall)
+  end
+  return {recall,precision,f1}
 end
-
-outPutFileName="../data/fb_test_out." .. opt.batchSize .. ".txt"
-
-
 -- test function
-function test( testData,outPutFileName )
-  collectgarbage()
-  -- local vars
-  local time = sys.clock()
-
-  -- test over given dataset
-  print('<trainer> on testing Set:')
-
+function test2 ( testDataFileName,outPutFileName )
+  function createSparseVector( l )
+    for i=1,table.getn(l) do
+      l[i]=l[i]
+    end
+    return torch.Tensor(l)
+  end
   local json = require ("dkjson")
-
   function compare(a,b)
     return a[2] > b[2]
   end
-  -- Opens a file in write
+  local averageRecall=0
+  local averagePrecision=0
+  local averageF1=0
+  local count=0
   outPutFile = io.open(outPutFileName, "w")
-  local accumulator={}
-  for i=1,testData:size() do
-    local score_table={}
-    local ind=1
-    for index=1,table.getn(testData[i])-3 do
-      local x=testData[i]['question_code']
-      local z=testData[i][index]['Can_code']
-      -- if x:size()[1]>=2 and z:size()[1]>=2 then
+  local test=io.open(testDataFileName)
+  for i=1,testDataSize do
+      local qa=test:read("*line"):split(" # ")
+      local Q_text=qa[1]
+      local Answers=qa[2]
+      local answers, pos, err = json.decode (Answers, 1, nil)
+      local question_code=test:read("*line"):split(" ")
+      local x=createSparseVector(question_code)
+      local score_table={}
+      local index=1
+      while true do
+        local line=test:read("*line")
+        if line=="" or line==nil then
+          break
+        end
+        local l=line:split(" # ")
+        local Can_id=l[1]
+        local Can_code=l[2]:split(" ")
+        local z=createSparseVector(Can_code)
         local s=mlp1:forward{x,z}[1]
-        score_table[ind]={testData[i][index]['Can_id'],s}
-        ind=ind+1
-      -- end
-    end
-    table.sort(score_table,compare)
-    local predicates={}
-    local j=1
-    local answers=testData[i]['Answers']:split(",")
-    local num_answers=table.getn(answers)
-    local max_score=score_table[1][2]
-    for key,value in pairs(score_table) do
-      predicates[j]=value[1]
-      local cu_score=value[2]
-      local diff=(max_score-cu_score)
-      -- if j== num_answers then
-      --   table.insert(accumulator,diff)
-      --   break
-      -- end
-      if diff>=opt.margin*opt.threshold then
-        table.insert(accumulator,diff)
-        break
+        score_table[index]={Can_id,s}
+        index=index+1
       end
-      -- if j== opt.candidates then
-      --   table.insert(accumulator,diff)
-      --   break
-      -- end
-      j=j+1
-    end
-    local predicates_str = json.encode (predicates, { indent = true })
-    outPutFile:write(table.concat({testData[i]['Q_text'],testData[i]['Answers'],predicates_str},"\t"),"\n")  
+      table.sort(score_table,compare)
+      local predicatesSet={}
+      local j=1
+      local max_score=score_table[1][2]
+      for key,value in pairs(score_table) do
+        local cu_score=value[2]
+        local diff=max_score-cu_score
+        if diff>opt.margin*opt.threshold then
+          break
+        else
+          predicatesSet[value[1]]=true
+        end
+        j=j+1
+      end
+      predicates={}
+      for k,v in pairs(predicatesSet) do
+        table.insert(predicates,k)
+      end
+      local stat = computeF1(answers,predicates)
+      local recall=stat[1]
+      local precision=stat[2]
+      local f1=stat[3]
+      averageRecall = averageRecall + recall
+      averagePrecision = averagePrecision + precision
+      averageF1 = averageF1 + f1
+      count = count+1
+      local predicates_str = json.encode (predicates, { indent = true })
+      -- Opens a file in write
+      outPutFile:write(table.concat({Q_text,Answers,predicates_str},"\t"),"\n")  
   end
-  local accTensor=torch.Tensor(accumulator)
-  print("average diff:",torch.mean(accTensor),torch.max(accTensor),torch.min(accTensor))
+  -- Print final results
+  averageRecall = averageRecall / count
+  averagePrecision = averagePrecision / count
+  averageF1 = averageF1 / count
+  print ("Number of questions: ", count)
+  print ("Average recall over questions: ",averageRecall)
+  print ("Average precision over questions: " ,averagePrecision)
+  print ("Average f1 over questions (accuracy): ", averageF1)
+  averageNewF1 = 2 * averageRecall * averagePrecision / (averagePrecision + averageRecall)
+  print ("F1 of average recall and average precision: ", averageNewF1)
   -- close output file
   outPutFile:close()
 end
@@ -402,8 +457,9 @@ while true do
   if opt.network=='' then
     train(trainData)
   end
-  test(testData,outPutFileName)
-  os.execute('./evaluation.py ' .. outPutFileName)
+  -- test_new(testData,outPutFileName)
+  test2(testFile,outPutFileName)
+  -- os.execute('./evaluation.py ' .. outPutFileName)
   -- plot errors
    if opt.plot then
       trainLogger:style{['% mean class accuracy (train set)'] = '-'}

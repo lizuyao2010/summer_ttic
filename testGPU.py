@@ -1,3 +1,4 @@
+#!/usr/bin/python
 from theano import function, config, shared, sandbox
 import theano.tensor as T
 import numpy

@@ -7,7 +7,8 @@ require 'optim'
 require 'image'
 require 'pl'
 require 'paths'
-
+require 'rnn'
+require 'os'
 ----------------------------------------------------------------------
 -- parse command-line options
 --
@@ -26,22 +27,22 @@ local opt = lapp[[
    --coefL2           (default 0)           L2 penalty on the weights
    -t,--threads       (default 8)           number of threads
    -d,--dimension     (default 100)         dimension of embedding
-   -d,--relation_dimension     (default 100)         dimension of realtion embedding
    -a,--randomSampling   (default false)       randomSampling
-   -c,--candidates    (default 2)           number of candidates
+   -c,--candidates    (default 1)           number of candidates
    --margin           (default 1)           margin
    --threshold        (default 0)         threshold
+   --pretrained       (default false)      load pretrained embedding
 ]]
 -- fix seed
 torch.manualSeed(1)
 
 -- threads
 torch.setnumthreads(opt.threads)
-print('<torch> set nb of threads to ' .. torch.getnumthreads())
+-- print('<torch> set nb of threads to ' .. torch.getnumthreads())
 
 
 -- use floats, for SGD
-if opt.optimization == 'SGD' or opt.optimization == 'ADAGRAD' or opt.optimization == 'RMSPROP' then
+if opt.optimization == 'SGD' or opt.optimization == 'ADAGRAD' or opt.optimization == 'RMSPROP' or opt.optimization == 'ADADELTA' or opt.optimization == 'ADAM' then
    torch.setdefaulttensortype('torch.FloatTensor')
 end
 
@@ -59,12 +60,12 @@ if opt.dataset=="web" then
   testFile="../data/test_web_soft_code_list.txt"
   testDataSize=1918
 elseif opt.dataset=="web_dev" then
-  trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
-  Vocab_word=3114
+  trainData=torch.load('../data/train_random_web_soft_0.8_index_glove.bin')
+  Vocab_word=400000
   Vocab_relation=3358
   word_emb_file='../data/pretrained_word_emb_dev_glove'
   relation_emb_file='../data/pretrained_relation_emb_dev'
-  testFile="../data/dev_web_soft_code_list.txt"
+  testFile="../data/dev_web_soft_code_list.glove.txt"
   testDataSize=717
 elseif opt.dataset=="ws" then
   trainData=torch.load('../data/train_random_ws_soft_index.bin')
@@ -80,27 +81,32 @@ outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
 
 if opt.network == '' then
   -- define model to train
-  mlp1=nn.Sequential()
-  mlp1:add(nn.LookupTable(Vocab_word,opt.dimension))
-  kw=2
-  mlp1:add(nn.TemporalConvolution(opt.dimension,opt.relation_dimension,kw,1))
-  mlp1:add(nn.Tanh())
-  mlp1:add(nn.Sum(1))
 
-  mlp2=nn.Sequential()
-  mlp2:add(nn.LookupTable(Vocab_relation,opt.relation_dimension))
-  mlp2:add(nn.Sum(1))
+  print("load emb")
+  word_emb=nn.LookupTable(Vocab_word,opt.dimension)
+  relation_emb=nn.LookupTable(Vocab_relation,opt.dimension)
+  relation_emb.weight:uniform(-0.08, 0.08)
+  word_emb.weight=torch.load(word_emb_file)
+
+  mlp11=nn.Sequential()
+  mlp11:add(word_emb)  
+  mlp11:add(nn.Sum(1))
+  -- mlp1:add(nn.Tanh())
+
+  mlp12=nn.Sequential()
+  mlp12:add(relation_emb)
+  mlp12:add(nn.Sum(1))
   -- mlp2:add(nn.Tanh())
 
   prl=nn.ParallelTable();
-  prl:add(mlp1); prl:add(mlp2)
+  prl:add(mlp11); prl:add(mlp12)
 
   mlp1=nn.Sequential()
   mlp1:add(prl)
+  -- mlp1:add(nn.CosineDistance())
   mlp1:add(nn.DotProduct())
-
+  
   mlp2=mlp1:clone('weight','bias','gradWeight','gradBias')
-
   model=nn.Sequential()
   prla=nn.ParallelTable()
   prla:add(mlp1)
@@ -108,7 +114,7 @@ if opt.network == '' then
   model:add(prla)
   -- retrieve parameters and gradients
   parameters,gradParameters = model:getParameters()
-  parameters:uniform(-0.08, 0.08)
+  -- parameters:uniform(-0.08, 0.08)
   -- verbose
   print('<qa> using model:')
   print(model)
@@ -159,15 +165,13 @@ function train(dataset)
          -- local target = sample[2]
          -- local input = {{sample[1],sample[2]},{sample[1],sample[3]}}
          local x=shrink(sample[1])
-         if x:size()[1]>1 then
-           local y=shrink(sample[2])
-           local z=shrink(sample[3])
-           local input = {{x,y},{x,z}}
-           local target = 1
-           inputs[k] = input
-           targets[k] = target
-           k = k + 1
-         end
+         local y=shrink(sample[2])
+         local z=shrink(sample[3])
+         local input = {{x,y},{x,z}}
+         local target = 1
+         inputs[k] = input
+         targets[k] = target
+         k = k + 1
       end
 
       -- create closure to evaluate f(X) and df/dX
@@ -300,17 +304,18 @@ function train(dataset)
    confusion:zero()
 
    -- save/log current net
-   local filename = paths.concat(opt.save, 'qa.net')
+   local filename = paths.concat(opt.save, 'qa_'..opt.dataset..'.net')
    os.execute('mkdir -p ' .. sys.dirname(filename))
    if paths.filep(filename) then
       os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
    end
-   print('<trainer> saving network to '..filename)
+   -- print('<trainer> saving network to '..filename)
    -- torch.save(filename, mlp1)
 
    -- next epoch
    epoch = epoch + 1
 end
+
 
 function computeF1(goldList,predictedList)
   -- Assume all questions have at least one answer
@@ -439,6 +444,7 @@ while true do
   end
   test2(testFile,outPutFileName)
   -- os.execute('./evaluation.py ' .. outPutFileName)
+  print("")
   -- plot errors
    if opt.plot then
       trainLogger:style{['% mean class accuracy (train set)'] = '-'}
