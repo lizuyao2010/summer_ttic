@@ -63,6 +63,18 @@ elseif opt.dataset=="web_dev" then
   Vocab_relation=3358
   testFile="../data/dev_web_soft_code_list.txt"
   testDataSize=717
+elseif opt.dataset=="sim_dev" then
+  trainData=torch.load('../data/train_random_sim_soft_index.bin')
+  Vocab_word=44791
+  Vocab_relation=5348
+  testFile="../data/val_sim_soft_code.txt"
+  testDataSize=8458
+elseif opt.dataset=="sim_test" then
+  trainData=torch.load('../data/train_random_sim_soft_index.bin')
+  Vocab_word=44791
+  Vocab_relation=5348
+  testFile="../data/test_sim_soft_code.txt"
+  testDataSize=16775
 elseif opt.dataset=="ws" then
   trainData=torch.load('../data/train_random_ws_soft_index.bin')
   Vocab_word=51230
@@ -84,15 +96,15 @@ if opt.network == '' then
 
   mlp1:add(word_emb)
   -- mlp1:add(nn.Linear(opt.dimension,opt.dimension))
+  mlp1:add(nn.Dropout())  
   mlp1:add(nn.Sum(1))
   -- mlp1:add(nn.Tanh())
-  -- mlp1:add(nn.Dropout())  
 
   mlp2=nn.Sequential()
   mlp2:add(relation_emb)
+  -- mlp2:add(nn.Dropout())
   mlp2:add(nn.Sum(1))
   -- mlp2:add(nn.Tanh())
-  -- mlp2:add(nn.Dropout())
 
   prl=nn.ParallelTable();
   prl:add(mlp1); prl:add(mlp2)

@@ -5,7 +5,7 @@ require 'nn'
 require 'nnx'
 require 'optim'
 require 'paths'
-
+require "nngraph"
 ----------------------------------------------------------------------
 -- parse command-line options
 --
@@ -58,7 +58,7 @@ if opt.dataset=="web" then
   testDataSize=1918
 elseif opt.dataset=="web_dev" then
   trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
-  Vocab_word=3114
+  Vocab_word=3114+1
   Vocab_relation=3358
   word_emb_file='../data/pretrained_word_emb_dev_glove'
   relation_emb_file='../data/pretrained_relation_emb_dev'
@@ -87,39 +87,47 @@ else
   return
 end
 outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
+nngraph.setDebug(true)
 
 if opt.network == '' then
   -- define model to train
   activition = nn.Tanh()
+  -- word_emb=nn.LookupTable(Vocab_word,opt.dimension)
+
+  -- mlp1=nn.Sequential()
+  -- mlp1:add(word_emb)
+  
+  -- mlp1c=nn.ConcatTable()
+
+  -- mlp11=nn.Sequential()
+  -- kw=2
+  -- mlp11:add(nn.TemporalConvolution(opt.dimension,opt.bi_dimension,kw,1))
+  -- mlp11:add(nn.Dropout())
+  -- mlp11:add(nn.Sum(1))
+
+  -- mlp12=nn.Sequential()
+  -- mlp12:add(nn.Sum(1))
+
+  
+  -- mlp1c:add(mlp11)
+  -- mlp1c:add(mlp12)
+  -- mlp1:add(mlp1c)
+  -- mlp1:add(nn.JoinTable(1))
   word_emb=nn.LookupTable(Vocab_word,opt.dimension)
+  w1=word_emb()
+  w2=word_emb:clone()()
+  kw=2
+  conv=nn.TemporalConvolution(opt.dimension,opt.dimension,kw,1)
+  gram_1=nn.Sum(1)(conv(w1))
+  gram_2=nn.Sum(1)(conv:clone()(w2))
+  gap_gram = nn.JoinTable(1)({gram_1, gram_2})
+  gmod = nn.gModule({w1,w2}, {gap_gram})
 
   mlp1=nn.Sequential()
-  mlp1:add(word_emb)
-  
-  mlp1c=nn.ConcatTable()
-
-  mlp11=nn.Sequential()
-  kw=2
-  mlp11:add(nn.TemporalConvolution(opt.dimension,opt.bi_dimension,kw,1))
-  -- mlp11:add(activition)
-  mlp11:add(nn.Dropout())
-  mlp11:add(nn.Sum(1))
-
-  mlp12=nn.Sequential()
-  -- mlp12:add(activition)
-  mlp12:add(nn.Sum(1))
-
-  
-  mlp1c:add(mlp11)
-  mlp1c:add(mlp12)
-  mlp1:add(mlp1c)
-  
-  mlp1:add(nn.JoinTable(1))
-  -- mlp1:add(nn.CAddTable())
+  mlp1:add(gmod)
 
   mlp2=nn.Sequential()
-  mlp2:add(nn.LookupTable(Vocab_relation,opt.dimension+opt.bi_dimension))
-  -- mlp2:add(activition)
+  mlp2:add(nn.LookupTable(Vocab_relation,opt.dimension*2))
   mlp2:add(nn.Sum(1))
 
   prl=nn.ParallelTable();
@@ -165,6 +173,20 @@ function shrink( x )
   return x_new
 end
 
+function gap_gram( x )
+  -- body
+  grams={}
+  grams[1]=torch.Tensor(math.ceil(x:size()[1]/2))
+  grams[2]=torch.Tensor(math.floor(x:size()[1]/2))
+  for i=1,x:size()[1] do 
+    if i%2==0 then
+      grams[2][i/2]=x[i]
+    else
+      grams[1][math.ceil(i/2)]=x[i]
+    end
+  end
+  return grams
+end
 -- training function
 function train(dataset)
    -- epoch tracker
@@ -190,7 +212,8 @@ function train(dataset)
          -- local target = sample[2]
          -- local input = {{sample[1],sample[2]},{sample[1],sample[3]}}
          local x=shrink(sample[1])
-         if x:size()[1]>1 then
+         if x:size()[1]>3 then
+           x=gap_gram(x)
            local y=shrink(sample[2])
            local z=shrink(sample[3])
            local input = {{x,y},{x,z}}
@@ -406,10 +429,11 @@ function test2 ( testDataFileName,outPutFileName )
       local Answers=qa[2]
       local answers, pos, err = json.decode (Answers, 1, nil)
       local question_code=test:read("*line"):split(" ")
-      if table.getn(question_code)<2 then
-        question_code[2]=Vocab_word
+      for i=table.getn(question_code),3 do
+        table.insert(question_code, Vocab_word)
       end
       local x=createSparseVector(question_code)
+      x=gap_gram(x)
       local score_table={}
       local index=1
       while true do

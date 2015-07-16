@@ -15,11 +15,11 @@ def encode(text,dic):
     return codes
     # print >> fw, ' '.join(codes)
 
-with open('../data/word2ind_ws_soft.json','r') as fw1, open('../data/relation2ind_ws_soft.json','r') as fw2:
+with open('../data/word2ind_sim_soft.json','r') as fw1, open('../data/relation2ind_sim_soft.json','r') as fw2:
     word2ind=json.load(fw1)
     relation2ind=json.load(fw2)
 
-with open('../data/test_web_soft_list_low.txt','r') as fr, open('../data/test_ws_soft_code_list_low.txt','w') as fw:
+with open('../data/val_sim_soft.txt','r') as fr, open('../data/val_sim_soft_code.txt','w') as fw:
     for line in fr:
         line=line.strip()
         # new question
@@ -30,9 +30,12 @@ with open('../data/test_web_soft_list_low.txt','r') as fr, open('../data/test_ws
             continue
         # question and answer
         if flag==1:
-            print >> fw, line
+            # print >> fw, line
             q,a=line.split(' # ')
-            q=word_tokenize(q.lower().strip().rstrip('?'))
+            if '[' not in a and ']' not in a:
+                a=json.dumps([a])
+            print >> fw, ' # '.join([q,a])
+            q=word_tokenize(q.decode('utf-8').lower().strip().rstrip('?'))
             qcode=encode(q,word2ind)
             print >> fw, ' '.join(qcode)
             count+=1

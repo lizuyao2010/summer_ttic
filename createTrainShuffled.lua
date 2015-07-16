@@ -60,9 +60,9 @@ function loadTrainSet( state_file, train_file )
 end
 
 -- trainData=loadTrainSet("../data/state_2025750.txt","../data/train_all_new.txt")
--- trainData=loadTrainSet("../data/state_web.txt","../data/train_web.txt")
-trainData=loadTrainSet("../data/state_web_soft_0.8.glove.txt","../data/train_web_soft_0.8_code_glove.txt")
-torch.save('../data/train_random_web_soft_0.8_index_glove.bin',trainData)
+trainData=loadTrainSet("../data/state_sim_soft.txt","../data/train_sim_soft_train_code.txt")
+-- trainData=loadTrainSet("../data/state_web_soft_0.8.glove.txt","../data/train_web_soft_0.8_code_glove.txt")
+torch.save('../data/train_random_sim_soft_index.bin',trainData)
 
 -- torch.save('../data/train_random.bin',trainData)
 
