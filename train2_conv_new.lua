@@ -25,7 +25,7 @@ local opt = lapp[[
    --coefL1           (default 0)           L1 penalty on the weights
    --coefL2           (default 0)           L2 penalty on the weights
    -t,--threads       (default 8)           number of threads
-   -d,--dimension     (default 100)         dimension of embedding
+   -d,--dimension     (default 64)         dimension of embedding
    -a,--randomSampling   (default false)       randomSampling
    -c,--candidates    (default 2)           number of candidates
    --margin           (default 1)           margin
@@ -58,7 +58,7 @@ if opt.dataset=="web" then
   testDataSize=1918
 elseif opt.dataset=="web_dev" then
   trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
-  Vocab_word=3114
+  Vocab_word=3114+1
   Vocab_relation=3358
   word_emb_file='../data/pretrained_word_emb_dev_glove'
   relation_emb_file='../data/pretrained_relation_emb_dev'
@@ -80,14 +80,10 @@ outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
 if opt.network == '' then
   -- define model to train
   mlp1=nn.Sequential()
-  mlp1:add(nn.LookupTable(Vocab_word,opt.dimension))
+  mlp1:add(nn.LookupTable(Vocab_word,25))
   -- add left and right padding
-  mlp1:add(nn.Padding(1, 1))
-  mlp1:add(nn.Padding(1, -1))
-  -- mlp1:add(nn.Padding(1, -2))
-  -- kw=5, dw=1
-  kw=3
-  mlp1:add(nn.TemporalConvolution(opt.dimension,opt.dimension,kw,1))
+  kw=5
+  mlp1:add(nn.TemporalConvolution(25,opt.dimension,kw,1))
   mlp1:add(nn.Tanh())
   -- mlp1:add(nn.TemporalMaxPooling(kw))
   -- slow training
@@ -167,13 +163,15 @@ function train(dataset)
          -- local target = sample[2]
          -- local input = {{sample[1],sample[2]},{sample[1],sample[3]}}
          local x=shrink(sample[1])
-         local y=shrink(sample[2])
-         local z=shrink(sample[3])
-         local input = {{x,y},{x,z}}
-         local target = 1
-         inputs[k] = input
-         targets[k] = target
-         k = k + 1
+         if x:size()[1]>4 then
+           local y=shrink(sample[2])
+           local z=shrink(sample[3])
+           local input = {{x,y},{x,z}}
+           local target = 1
+           inputs[k] = input
+           targets[k] = target
+           k = k + 1
+         end
       end
 
       -- create closure to evaluate f(X) and df/dX
@@ -379,6 +377,9 @@ function test2 ( testDataFileName,outPutFileName )
       local Answers=qa[2]
       local answers, pos, err = json.decode (Answers, 1, nil)
       local question_code=test:read("*line"):split(" ")
+      for i=table.getn(question_code),4 do
+        table.insert(question_code, Vocab_word)
+      end
       local x=createSparseVector(question_code)
       local score_table={}
       local index=1

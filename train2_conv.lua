@@ -31,6 +31,7 @@ local opt = lapp[[
    -c,--candidates    (default 2)           number of candidates
    --margin           (default 1)           margin
    --threshold        (default 0)         threshold
+   -k,--kw    (default 2)           kernel size
 ]]
 -- fix seed
 torch.manualSeed(1)
@@ -60,7 +61,7 @@ if opt.dataset=="web" then
   testDataSize=1918
 elseif opt.dataset=="web_dev" then
   trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
-  Vocab_word=3114
+  Vocab_word=3114+1
   Vocab_relation=3358
   word_emb_file='../data/pretrained_word_emb_dev_glove'
   relation_emb_file='../data/pretrained_relation_emb_dev'
@@ -82,15 +83,13 @@ if opt.network == '' then
   -- define model to train
   mlp1=nn.Sequential()
   mlp1:add(nn.LookupTable(Vocab_word,opt.dimension))
-  kw=2
+  kw=opt.kw
   mlp1:add(nn.TemporalConvolution(opt.dimension,opt.relation_dimension,kw,1))
-  mlp1:add(nn.Tanh())
   mlp1:add(nn.Sum(1))
 
   mlp2=nn.Sequential()
   mlp2:add(nn.LookupTable(Vocab_relation,opt.relation_dimension))
   mlp2:add(nn.Sum(1))
-  -- mlp2:add(nn.Tanh())
 
   prl=nn.ParallelTable();
   prl:add(mlp1); prl:add(mlp2)
@@ -159,7 +158,7 @@ function train(dataset)
          -- local target = sample[2]
          -- local input = {{sample[1],sample[2]},{sample[1],sample[3]}}
          local x=shrink(sample[1])
-         if x:size()[1]>1 then
+         if x:size()[1]>kw-1 then
            local y=shrink(sample[2])
            local z=shrink(sample[3])
            local input = {{x,y},{x,z}}
@@ -372,6 +371,9 @@ function test2 ( testDataFileName,outPutFileName )
       local Answers=qa[2]
       local answers, pos, err = json.decode (Answers, 1, nil)
       local question_code=test:read("*line"):split(" ")
+      for i=table.getn(question_code),kw-1 do
+        table.insert(question_code, Vocab_word)
+      end
       local x=createSparseVector(question_code)
       local score_table={}
       local index=1
