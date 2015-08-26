@@ -102,7 +102,7 @@ if opt.network == '' then
   kw=2
   mlp11:add(nn.TemporalConvolution(opt.dimension,opt.bi_dimension,kw,1))
   -- mlp11:add(activition)
-  mlp11:add(nn.Dropout())
+  -- mlp11:add(nn.Dropout())
   mlp11:add(nn.Sum(1))
 
   mlp12=nn.Sequential()

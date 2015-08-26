@@ -7,7 +7,7 @@ require 'optim'
 require 'image'
 require 'pl'
 require 'paths'
-
+require 'os'
 ----------------------------------------------------------------------
 -- parse command-line options
 --
@@ -25,13 +25,14 @@ local opt = lapp[[
    --coefL1           (default 0)           L1 penalty on the weights
    --coefL2           (default 0)           L2 penalty on the weights
    -t,--threads       (default 8)           number of threads
-   -d,--dimension     (default 100)         dimension of embedding
+   -d,--dimension     (default 200)         dimension of embedding
+   --relation_dimension (default 100)
    -a,--randomSampling   (default false)       randomSampling
-   -c,--candidates    (default 2)           number of candidates
+   -c,--candidates    (default 1)           number of candidates
    --margin           (default 1)           margin
    --threshold        (default 0)         threshold
    --pretrained       (default false)      load pretrained embedding
-   --factor           (default 1)          multilayer dimension
+   --dropout          (default 0.2)        dropout prob
 ]]
 -- fix seed
 torch.manualSeed(1)
@@ -42,7 +43,7 @@ torch.setnumthreads(opt.threads)
 
 
 -- use floats, for SGD
-if opt.optimization == 'SGD' or opt.optimization == 'ADAGRAD' or opt.optimization == 'RMSPROP' then
+if opt.optimization == 'SGD' or opt.optimization == 'ADAGRAD' or opt.optimization == 'RMSPROP' or opt.optimization == 'ADADELTA' or opt.optimization == 'ADAM' then
    torch.setdefaulttensortype('torch.FloatTensor')
 end
 
@@ -55,56 +56,59 @@ if opt.dataset=="web" then
   trainData=torch.load('../data/train_random_web_soft_index.bin')
   Vocab_word=3499
   Vocab_relation=3505
-  word_emb_file='../data/pretrained_word_emb'
-  relation_emb_file='../data/pretrained_relation_emb'
-elseif opt.dataset=="web_new" then
-  trainData=torch.load('../data/train_random_web_soft_index_new.bin')
-  Vocab_word=3501
-  Vocab_relation=3505
+  testFile="../data/test_web_soft_code_list_low.txt"
+  -- testDataSize=1918
+  testDataSize=1921
 elseif opt.dataset=="web_dev" then
   trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
   Vocab_word=3114
   Vocab_relation=3358
-  word_emb_file='../data/pretrained_word_emb_dev'
-  relation_emb_file='../data/pretrained_relation_emb_dev'
+  testFile="../data/dev_web_soft_code_list.txt"
+  testDataSize=717
+elseif opt.dataset=="web_dev_char" then
+  trainData=torch.load('../data/train_random_web_soft_0.8_char_index.bin')
+  Vocab_word=37
+  Vocab_relation=3358
+  testFile="../data/dev_web_soft_code_list_char.txt"
+  testDataSize=717
+elseif opt.dataset=="sim_dev" then
+  trainData=torch.load('../data/train_random_sim_soft_index.bin')
+  Vocab_word=44791
+  Vocab_relation=5348
+  testFile="../data/val_sim_soft_code.txt"
+  testDataSize=8458
+elseif opt.dataset=="sim_test" then
+  trainData=torch.load('../data/train_random_sim_soft_index.bin')
+  Vocab_word=44791
+  Vocab_relation=5348
+  testFile="../data/test_sim_soft_code.txt"
+  testDataSize=16775
 elseif opt.dataset=="ws" then
   trainData=torch.load('../data/train_random_ws_soft_index.bin')
   Vocab_word=51230
   Vocab_relation=6769
+  testFile="../data/test_ws_soft_code_list_low.txt"
+  -- testDataSize=1918
+  testDataSize=1921
 else
-  trainData=torch.load('../data/train_random.bin')
-  Vocab=2025750
+  print("no that dataset")
+  return
 end
+outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
 
 if opt.network == '' then
   -- define model to train
   mlp1=nn.Sequential()
-
-  if opt.pretrained==true then
-    opt.dimension=50
-    word_emb=nn.LookupTable(Vocab_word,opt.dimension)
-    relation_emb=nn.LookupTable(Vocab_relation,opt.dimension)
-    emb=torch.load(word_emb_file)
-    word_emb.weight=emb
-    emb = torch.load(relation_emb_file)
-    relation_emb.weight=emb
-  else
-    word_emb=nn.LookupTable(Vocab_word,opt.dimension)
-    relation_emb=nn.LookupTable(Vocab_relation,opt.dimension/opt.factor)
-  end
+  word_emb=nn.LookupTable(Vocab_word,opt.dimension)
+  relation_emb=nn.LookupTable(Vocab_relation,opt.relation_dimension)
 
   mlp1:add(word_emb)
   mlp1:add(nn.Sum(1))
-  mlp1:add(nn.Tanh())
-  mlp1:add(nn.Linear(opt.dimension,opt.dimension/opt.factor))
-  mlp1:add(nn.Tanh())
-
+  mlp1:add(nn.Dropout(opt.dropout))  
+  mlp1:add(nn.Linear(opt.dimension,opt.relation_dimension))
   mlp2=nn.Sequential()
-
-
   mlp2:add(relation_emb)
   mlp2:add(nn.Sum(1))
-  mlp2:add(nn.Tanh())
 
   prl=nn.ParallelTable();
   prl:add(mlp1); prl:add(mlp2)
@@ -122,12 +126,10 @@ if opt.network == '' then
   model:add(prla)
   -- retrieve parameters and gradients
   parameters,gradParameters = model:getParameters()
-  if opt.pretrained==false then
-    parameters:uniform(-0.08, 0.08)
-  end
+  parameters:uniform(-0.08, 0.08)
   -- verbose
-  print('<qa> using model:')
-  print(model)
+  -- print('<qa> using model:')
+  -- print(model)
 
   -- set criterion
   -- local margin=opt.margin
@@ -161,8 +163,8 @@ function train(dataset)
    -- shuffle = torch.randperm(dataset:size())
    shuffle = torch.randperm(dataset:size()[1])
    -- do one epoch
-   print('<trainer> on training set:')
-   print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
+   -- print('<trainer> on training set:')
+   -- print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
    for t = 1,dataset:size()[1],opt.batchSize do
       -- create mini batch
       local inputs = {}
@@ -306,10 +308,10 @@ function train(dataset)
    -- time taken
    time = sys.clock() - time
    time = time / dataset:size()[1]
-   print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
+   -- print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
    -- print confusion matrix
-   print(confusion)
+   -- print(confusion)
    trainLogger:add{['% mean class accuracy (train set)'] = confusion.totalValid * 100}
    confusion:zero()
 
@@ -327,74 +329,43 @@ function train(dataset)
 end
 
 
--- if opt.dataset=="web" then
---   testData = torch.load('../data/test_web_soft_index.bin')
--- elseif opt.dataset=="web_new" then
---   testData = torch.load('../data/test_web_soft_index_new.bin')
--- elseif opt.dataset=="web_dev" then
---   testData = torch.load('../data/dev_web_soft_index.bin')
--- elseif opt.dataset=="ws" then
---   testData = torch.load('../data/test_ws_soft_index.bin')
--- else
---   testData = torch.load('../data/test.bin')
--- end
-
-
-outPutFileName="../data/fb_test_out." .. opt.batchSize .. ".txt"
--- test function
-function test( testData,outPutFileName )
-  collectgarbage()
-  -- local vars
-  local time = sys.clock()
-
-  -- test over given dataset
-  print('<trainer> on testing Set:')
-
-  local json = require ("dkjson")
-
-  function compare(a,b)
-    return a[2] > b[2]
+function computeF1(goldList,predictedList)
+  -- Assume all questions have at least one answer
+  -- print("gold",goldList)
+  -- print("pred",predictedList)
+  if #goldList==0 then
+    error({mss="gold list may not be empty"})
   end
-  -- Opens a file in write
-  outPutFile = io.open(outPutFileName, "w")
-  local accumulator={}
-  for i=1,testData:size() do
-    local score_table={}
-    for index=1,table.getn(testData[i])-3 do
-      local x=testData[i]['question_code']
-      local z=testData[i][index]['Can_code']
-      local s=mlp1:forward{x,z}[1]
-      score_table[index]={testData[i][index]['Can_id'],s}
-    end
-    table.sort(score_table,compare)
-    local predicates={}
-    local j=1
-    local answers=testData[i]['Answers']:split(",")
-    local num_answers=table.getn(answers)
-    local max_score=score_table[1][2]
-    for key,value in pairs(score_table) do
-      predicates[j]=value[1]
-      local cu_score=value[2]
-      local diff=(max_score-cu_score)
-      -- if diff>=opt.margin*opt.threshold then
-      --   table.insert(accumulator,diff)
-      --   break
-      -- end
-      if j >= opt.candidates then
-        break
+  -- If we return an empty list recall is zero and precision is one
+  if #predictedList==0 then
+    return {0,1,0}
+  end
+  -- It is guaranteed now that both lists are not empty
+  local precision = 0
+  for i,entity in ipairs(predictedList) do
+    for j,gold in ipairs(goldList) do
+      if entity==gold then
+        precision=precision+1
       end
-      j=j+1
     end
-    local predicates_str = json.encode (predicates, { indent = true })
-    outPutFile:write(table.concat({testData[i]['Q_text'],testData[i]['Answers'],predicates_str},"\t"),"\n")  
   end
-  local accTensor=torch.Tensor(accumulator)
-  -- print("average diff:",torch.mean(accTensor),torch.max(accTensor),torch.min(accTensor))
-  -- close output file
-  outPutFile:close()
+  precision = precision / #predictedList
+  local recall=0
+  for i,entity in ipairs(goldList) do
+    for j,pred in ipairs(predictedList) do
+      if entity==pred then
+        recall=recall+1
+      end
+    end
+  end
+  recall = recall / #goldList
+  local f1 = 0
+  if precision+recall>0 then
+    f1 = 2*recall*precision / (precision + recall)
+  end
+  return {recall,precision,f1}
 end
-
-
+-- test function
 function test2 ( testDataFileName,outPutFileName )
   function createSparseVector( l )
     for i=1,table.getn(l) do
@@ -406,13 +377,17 @@ function test2 ( testDataFileName,outPutFileName )
   function compare(a,b)
     return a[2] > b[2]
   end
-  local DataSize=717
+  local averageRecall=0
+  local averagePrecision=0
+  local averageF1=0
+  local count=0
   outPutFile = io.open(outPutFileName, "w")
   local test=io.open(testDataFileName)
-  for i=1,DataSize do
+  for i=1,testDataSize do
       local qa=test:read("*line"):split(" # ")
       local Q_text=qa[1]
       local Answers=qa[2]
+      local answers, pos, err = json.decode (Answers, 1, nil)
       local question_code=test:read("*line"):split(" ")
       local x=createSparseVector(question_code)
       local score_table={}
@@ -431,22 +406,47 @@ function test2 ( testDataFileName,outPutFileName )
         index=index+1
       end
       table.sort(score_table,compare)
-      local predicates={}
+      local predicatesSet={}
       local j=1
       local max_score=score_table[1][2]
       for key,value in pairs(score_table) do
-        predicates[j]=value[1]
         local cu_score=value[2]
         local diff=max_score-cu_score
-        if diff>=opt.margin*opt.threshold then
+        if diff>opt.margin*opt.threshold then
           break
+        else
+          predicatesSet[value[1]]=true
         end
         j=j+1
       end
+      predicates={}
+      for k,v in pairs(predicatesSet) do
+        table.insert(predicates,k)
+      end
+      local stat = computeF1(answers,predicates)
+      local recall=stat[1]
+      local precision=stat[2]
+      local f1=stat[3]
+      averageRecall = averageRecall + recall
+      averagePrecision = averagePrecision + precision
+      averageF1 = averageF1 + f1
+      count = count+1
       local predicates_str = json.encode (predicates, { indent = true })
       -- Opens a file in write
       outPutFile:write(table.concat({Q_text,Answers,predicates_str},"\t"),"\n")  
   end
+  -- Print final results
+  averageRecall = averageRecall / count
+  averagePrecision = averagePrecision / count
+  averageF1 = averageF1 / count
+  -- print ("Number of questions: ", count)
+  -- print ("Average recall over questions: ",averageRecall)
+  -- print ("Average precision over questions: " ,averagePrecision)
+  -- print ("Average f1 over questions (accuracy): ", averageF1)
+  -- print(averageF1)
+  averageNewF1 = 2 * averageRecall * averagePrecision / (averagePrecision + averageRecall)
+  -- print ("F1 of average recall and average precision: ", averageNewF1)
+  print(averageNewF1)
   -- close output file
   outPutFile:close()
 end
@@ -454,11 +454,13 @@ end
 while true do
   -- train
   if opt.network=='' then
+    model:training()
     train(trainData)
   end
-  -- test(testData,outPutFileName)
-  test2("../data/dev_web_soft_code.txt",outPutFileName)
-  os.execute('./evaluation.py ' .. outPutFileName)
+  mlp1:evaluate()
+  test2(testFile,outPutFileName)
+  -- os.execute('./evaluation.py ' .. outPutFileName)
+  -- print("")
   -- plot errors
    if opt.plot then
       trainLogger:style{['% mean class accuracy (train set)'] = '-'}

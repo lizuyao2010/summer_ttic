@@ -95,18 +95,19 @@ if opt.network == '' then
   word_emb=nn.LookupTable(Vocab_word,opt.dimension)
   w1=word_emb()
   w2=word_emb:clone()()
+  sent=nn.CAddTable(1)({nn.Sum(1)(w1),nn.Sum(1)(w2)})
   kw=2
   conv=nn.TemporalConvolution(opt.dimension,opt.dimension,kw,1)
   gram_1=nn.Sum(1)(conv(w1))
   gram_2=nn.Sum(1)(conv:clone()(w2))
-  gap_gram = nn.JoinTable(1)({gram_1, gram_2})
+  gap_gram = nn.JoinTable(1)({gram_1, gram_2,sent})
   gmod = nn.gModule({w1,w2}, {gap_gram})
 
   mlp1=nn.Sequential()
   mlp1:add(gmod)
 
   mlp2=nn.Sequential()
-  mlp2:add(nn.LookupTable(Vocab_relation,opt.dimension*2))
+  mlp2:add(nn.LookupTable(Vocab_relation,opt.dimension*3))
   mlp2:add(nn.Sum(1))
 
   prl=nn.ParallelTable();

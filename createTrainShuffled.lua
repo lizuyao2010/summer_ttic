@@ -3,7 +3,7 @@ require 'math'
 opt={}
 opt.negativeSamples=80
 torch.setdefaulttensortype('torch.FloatTensor')
-sentLength=27
+sentLength=82
 
 function createIndex( l )
   local t=torch.Tensor(sentLength):zero()
@@ -20,9 +20,10 @@ function loadTrainSet( state_file, train_file )
   local state=io.input(state_file)
   local l=io.read("*line"):split(" ")
   state:close()
-  local Vocab_word=tonumber(l[1])
-  local Vocab_relation=tonumber(l[2])
-  local trainDataSize=tonumber(l[3])
+  sentLength=tonumber(l[1])+1
+  local Vocab_word=tonumber(l[2])
+  local Vocab_relation=tonumber(l[3])
+  local trainDataSize=tonumber(l[4])
   local trainData=torch.Tensor(trainDataSize*opt.negativeSamples,3,sentLength)
   local train=io.input(train_file)
   local j=1
@@ -60,9 +61,9 @@ function loadTrainSet( state_file, train_file )
 end
 
 -- trainData=loadTrainSet("../data/state_2025750.txt","../data/train_all_new.txt")
-trainData=loadTrainSet("../data/state_sim_soft.txt","../data/train_sim_soft_train_code.txt")
+trainData=loadTrainSet("../data/state_web_soft_0.8_char.txt","../data/train_web_soft_0.8_code_char.txt")
 -- trainData=loadTrainSet("../data/state_web_soft_0.8.glove.txt","../data/train_web_soft_0.8_code_glove.txt")
-torch.save('../data/train_random_sim_soft_index.bin',trainData)
+torch.save('../data/train_random_web_soft_0.8_char_index.bin',trainData)
 
 -- torch.save('../data/train_random.bin',trainData)
 

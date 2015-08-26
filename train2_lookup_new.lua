@@ -55,13 +55,18 @@ if opt.dataset=="web" then
   Vocab_word=3499
   Vocab_relation=3505
   testFile="../data/test_web_soft_code_list_low.txt"
-  -- testDataSize=1918
   testDataSize=1921
 elseif opt.dataset=="web_dev" then
   trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
   Vocab_word=3114
   Vocab_relation=3358
   testFile="../data/dev_web_soft_code_list.txt"
+  testDataSize=717
+elseif opt.dataset=="web_dev_char" then
+  trainData=torch.load('../data/train_random_web_soft_0.8_char_index.bin')
+  Vocab_word=37
+  Vocab_relation=3358
+  testFile="../data/dev_web_soft_code_list_char.txt"
   testDataSize=717
 elseif opt.dataset=="sim_dev" then
   trainData=torch.load('../data/train_random_sim_soft_index.bin')
@@ -80,7 +85,6 @@ elseif opt.dataset=="ws" then
   Vocab_word=51230
   Vocab_relation=6769
   testFile="../data/test_ws_soft_code_list_low.txt"
-  -- testDataSize=1918
   testDataSize=1921
 else
   print("no that dataset")
@@ -95,23 +99,17 @@ if opt.network == '' then
   relation_emb=nn.LookupTable(Vocab_relation,opt.dimension)
 
   mlp1:add(word_emb)
-  -- mlp1:add(nn.Linear(opt.dimension,opt.dimension))
-  mlp1:add(nn.Dropout())  
   mlp1:add(nn.Sum(1))
-  -- mlp1:add(nn.Tanh())
 
   mlp2=nn.Sequential()
   mlp2:add(relation_emb)
-  -- mlp2:add(nn.Dropout())
   mlp2:add(nn.Sum(1))
-  -- mlp2:add(nn.Tanh())
 
   prl=nn.ParallelTable();
   prl:add(mlp1); prl:add(mlp2)
 
   mlp1=nn.Sequential()
   mlp1:add(prl)
-  -- mlp1:add(nn.CosineDistance())
   mlp1:add(nn.DotProduct())
   
   mlp2=mlp1:clone('weight','bias','gradWeight','gradBias')
@@ -318,7 +316,8 @@ function train(dataset)
       os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
    end
    -- print('<trainer> saving network to '..filename)
-   -- torch.save(filename, mlp1)
+   torch.save('../models/word_emb_100_epoch_'..epoch, word_emb.weight)
+   torch.save('../models/relation_emb_100_epoch_'..epoch, relation_emb.weight)
 
    -- next epoch
    epoch = epoch + 1

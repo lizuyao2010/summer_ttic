@@ -4,15 +4,17 @@ require 'torch'
 require 'nn'
 require 'nnx'
 require 'optim'
+require 'image'
+require 'pl'
 require 'paths'
-require "nngraph"
+
 ----------------------------------------------------------------------
 -- parse command-line options
 --
 local opt = lapp[[
    -s,--save          (default "logs")      subdirectory to save logs
    -n,--network       (default "")          reload pretrained network
-   --dataset          (default "web_dev")       dataset
+   --dataset          (default "web_dev_char")       dataset
    -f,--full                                use the full dataset
    -p,--plot                                plot while training
    -o,--optimization  (default "ADAGRAD")       optimization: SGD | LBFGS | ADAGRAD | ADADELTA | ADAM | RMSPROP
@@ -24,11 +26,12 @@ local opt = lapp[[
    --coefL2           (default 0)           L2 penalty on the weights
    -t,--threads       (default 8)           number of threads
    -d,--dimension     (default 100)         dimension of embedding
-   --bi_dimension     (default 100)         dimension of bigram embedding
+   -d,--relation_dimension     (default 100)         dimension of realtion embedding
    -a,--randomSampling   (default false)       randomSampling
    -c,--candidates    (default 2)           number of candidates
-   --margin           (default 4.8)           margin
+   --margin           (default 1)           margin
    --threshold        (default 0)         threshold
+   -k,--kw    (default 1)           kernel size
 ]]
 -- fix seed
 torch.manualSeed(1)
@@ -39,7 +42,7 @@ print('<torch> set nb of threads to ' .. torch.getnumthreads())
 
 
 -- use floats, for SGD
-if opt.optimization == 'SGD' or opt.optimization == 'ADAGRAD' or opt.optimization == 'RMSPROP' or opt.optimization == 'ADAM' then
+if opt.optimization == 'SGD' or opt.optimization == 'ADAGRAD' or opt.optimization == 'RMSPROP' then
    torch.setdefaulttensortype('torch.FloatTensor')
 end
 
@@ -64,18 +67,12 @@ elseif opt.dataset=="web_dev" then
   relation_emb_file='../data/pretrained_relation_emb_dev'
   testFile="../data/dev_web_soft_code_list.txt"
   testDataSize=717
-elseif opt.dataset=="sim_dev" then
-  trainData=torch.load('../data/train_random_sim_soft_index.bin')
-  Vocab_word=44791+1
-  Vocab_relation=5348
-  testFile="../data/val_sim_soft_code.txt"
-  testDataSize=8458
-elseif opt.dataset=="sim_test" then
-  trainData=torch.load('../data/train_random_sim_soft_index.bin')
-  Vocab_word=44791
-  Vocab_relation=5348
-  testFile="../data/test_sim_soft_code.txt"
-  testDataSize=16775
+elseif opt.dataset=="web_dev_char" then
+  trainData=torch.load('../data/train_random_web_soft_0.8_char_index.bin')
+  Vocab_word=37
+  Vocab_relation=3358
+  testFile="../data/dev_web_soft_code_list_char.txt"
+  testDataSize=717
 elseif opt.dataset=="ws" then
   trainData=torch.load('../data/train_random_ws_soft_index.bin')
   Vocab_word=51230
@@ -87,26 +84,17 @@ else
   return
 end
 outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
-nngraph.setDebug(true)
 
 if opt.network == '' then
   -- define model to train
-  activition = nn.Tanh()
-  word_emb=nn.LookupTable(Vocab_word,opt.dimension)
-  w1=word_emb()
-  w2=word_emb:clone()()
-  kw=2
-  conv=nn.TemporalConvolution(opt.dimension,opt.dimension,kw,1)
-  gram_1=nn.Sum(1)(conv(w1))
-  gram_2=nn.Sum(1)(conv:clone()(w2))
-  gap_gram = nn.JoinTable(1)({gram_1, gram_2})
-  gmod = nn.gModule({w1,w2}, {gap_gram})
-
   mlp1=nn.Sequential()
-  mlp1:add(gmod)
+  -- mlp1:add(nn.LookupTable(Vocab_word,opt.dimension))
+  kw=opt.kw
+  mlp1:add(nn.TemporalConvolution(math.pow(Vocab_word,2),opt.relation_dimension,kw,1))
+  mlp1:add(nn.Max(1))
 
   mlp2=nn.Sequential()
-  mlp2:add(nn.LookupTable(Vocab_relation,opt.dimension*2))
+  mlp2:add(nn.LookupTable(Vocab_relation,opt.relation_dimension))
   mlp2:add(nn.Sum(1))
 
   prl=nn.ParallelTable();
@@ -123,16 +111,15 @@ if opt.network == '' then
   prla:add(mlp1)
   prla:add(mlp2)
   model:add(prla)
-
-  print('<qa> using model:')
-  print(model)
   -- retrieve parameters and gradients
   parameters,gradParameters = model:getParameters()
   parameters:uniform(-0.08, 0.08)
   -- verbose
-  
+  print('<qa> using model:')
+  print(model)
 
   -- set criterion
+  -- local margin=opt.margin
   crit=nn.MarginRankingCriterion(opt.margin); 
 else 
   mlp1 = torch.load(opt.network)
@@ -152,20 +139,31 @@ function shrink( x )
   return x_new
 end
 
-function gap_gram( x )
-  -- body
-  grams={}
-  grams[1]=torch.Tensor(math.ceil(x:size()[1]/2))
-  grams[2]=torch.Tensor(math.floor(x:size()[1]/2))
-  for i=1,x:size()[1] do 
-    if i%2==0 then
-      grams[2][i/2]=x[i]
-    else
-      grams[1][math.ceil(i/2)]=x[i]
+function shrink_question( x )
+  local n=x[1]
+  local sent_len=0
+  for i=1,n do
+    if x[i+1]==Vocab_word then
+      sent_len=sent_len+1
     end
   end
-  return grams
+  local sent = torch.zeros(sent_len,math.pow(Vocab_word,2))
+  local j=1
+  local p1=Vocab_word
+  for i=2,n+1 do
+    -- if is space
+    if x[i]==Vocab_word then
+      j=j+1
+      p1=x[i]
+    else
+      local col=(p1-1)*(Vocab_word)+x[i]
+      sent[j][col]=sent[j][col]+1
+      p1=x[i]
+    end
+  end
+  return sent
 end
+
 -- training function
 function train(dataset)
    -- epoch tracker
@@ -187,12 +185,8 @@ function train(dataset)
       for i = t,math.min(t+opt.batchSize-1,dataset:size()[1]) do
          -- load new sample
          local sample = dataset[shuffle[i]]
-         -- local input = sample[1]
-         -- local target = sample[2]
-         -- local input = {{sample[1],sample[2]},{sample[1],sample[3]}}
-         local x=shrink(sample[1])
-         if x:size()[1]>3 then
-           x=gap_gram(x)
+         local x=shrink_question(sample[1])
+         if x:size()[1]>kw-1 then
            local y=shrink(sample[2])
            local z=shrink(sample[3])
            local input = {{x,y},{x,z}}
@@ -345,9 +339,6 @@ function train(dataset)
    epoch = epoch + 1
 end
 
-
-
-
 function computeF1(goldList,predictedList)
   -- Assume all questions have at least one answer
   -- print("gold",goldList)
@@ -386,11 +377,27 @@ function computeF1(goldList,predictedList)
 end
 -- test function
 function test2 ( testDataFileName,outPutFileName )
-  function createSparseVector( l )
-    for i=1,table.getn(l) do
-      l[i]=l[i]
+  function createSparseVector( x,n )
+    local sent_len=0
+    for i=1,n do
+      if tonumber(x[i])==Vocab_word then
+        sent_len=sent_len+1
+      end
     end
-    return torch.Tensor(l)
+    local sent = torch.zeros(sent_len,math.pow(Vocab_word,2))
+    local j=1
+    local p1 = 0
+    for i=1,n do
+      if tonumber(x[i])==Vocab_word then
+        j=j+1
+        p1=Vocab_word
+      else
+        local col=(p1-1)*(Vocab_word)+tonumber(x[i])
+        sent[j][col]=sent[j][col]+1
+        p1=tonumber(x[i])
+      end
+    end
+    return sent
   end
   local json = require ("dkjson")
   function compare(a,b)
@@ -408,11 +415,10 @@ function test2 ( testDataFileName,outPutFileName )
       local Answers=qa[2]
       local answers, pos, err = json.decode (Answers, 1, nil)
       local question_code=test:read("*line"):split(" ")
-      for i=table.getn(question_code),3 do
-        table.insert(question_code, Vocab_word)
-      end
-      local x=createSparseVector(question_code)
-      x=gap_gram(x)
+      -- for i=table.getn(question_code),kw-1 do
+      --   table.insert(question_code, Vocab_word)
+      -- end
+      local x=createSparseVector(question_code,table.getn(question_code))
       local score_table={}
       local index=1
       while true do
@@ -423,7 +429,7 @@ function test2 ( testDataFileName,outPutFileName )
         local l=line:split(" # ")
         local Can_id=l[1]
         local Can_code=l[2]:split(" ")
-        local z=createSparseVector(Can_code)
+        local z=torch.Tensor(Can_code)
         local s=mlp1:forward{x,z}[1]
         score_table[index]={Can_id,s}
         index=index+1
@@ -473,13 +479,13 @@ function test2 ( testDataFileName,outPutFileName )
 end
 
 while true do
+  -- test2(testFile,outPutFileName)
   -- train
   if opt.network=='' then
-    model:training()
     train(trainData)
   end
-  model:evaluate()
   test2(testFile,outPutFileName)
+  -- os.execute('./evaluation.py ' .. outPutFileName)
   -- plot errors
    if opt.plot then
       trainLogger:style{['% mean class accuracy (train set)'] = '-'}
