@@ -1,0 +1,6 @@
+#!/bin/torch_c
+cd /share/project/zuyao/src && . ~/torch_env/env.sh && th train2_lookup_new.lua -c 1 > ../log/c_1.txt
+cd /share/project/zuyao/src && . ~/torch_env/env.sh && th train2_lookup_new.lua -c 2 > ../log/c_2.txt
+cd /share/project/zuyao/src && . ~/torch_env/env.sh && th train2_lookup_new.lua -c 3 > ../log/c_3.txt
+cd /share/project/zuyao/src && . ~/torch_env/env.sh && th train2_lookup_new.lua -c 4 > ../log/c_4.txt
+cd /share/project/zuyao/src && . ~/torch_env/env.sh && th train2_lookup_new.lua -c 5 > ../log/c_5.txt
