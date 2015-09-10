@@ -12,7 +12,7 @@ require 'paths'
 local opt = lapp[[
    -s,--save          (default "logs")      subdirectory to save logs
    -n,--network       (default "")          reload pretrained network
-   --dataset          (default "web_dev")       dataset
+   --dataset          (default "ws")       dataset
    -f,--full                                use the full dataset
    -p,--plot                                plot while training
    -o,--optimization  (default "ADAGRAD")       optimization: SGD | LBFGS | ADAGRAD | ADADELTA | ADAM | RMSPROP
@@ -80,8 +80,8 @@ elseif opt.dataset=="ws" then
   trainData=torch.load('../data/train_random_ws_soft_index.bin')
   Vocab_word=51230
   Vocab_relation=6769
-  testFile="../data/test_ws_soft_code_list.txt"
-  testDataSize=1918
+  testFile="../data/test_ws_soft_code_list_low.txt"
+  testDataSize=1921
 else
   print("no that dataset")
   return
@@ -93,8 +93,8 @@ if opt.network == '' then
   activition = nn.Tanh()
   word_emb=nn.LookupTable(Vocab_word,opt.dimension)
 
-  mlp1=nn.Sequential()
-  mlp1:add(word_emb)
+  sent=nn.Sequential()
+  sent:add(word_emb)
   
   mlp1c=nn.ConcatTable()
 
@@ -112,18 +112,18 @@ if opt.network == '' then
   
   mlp1c:add(mlp11)
   mlp1c:add(mlp12)
-  mlp1:add(mlp1c)
+  sent:add(mlp1c)
   
-  mlp1:add(nn.JoinTable(1))
+  sent:add(nn.JoinTable(1))
   -- mlp1:add(nn.CAddTable())
-
+  relation_emb=nn.LookupTable(Vocab_relation,opt.dimension+opt.bi_dimension)
   mlp2=nn.Sequential()
-  mlp2:add(nn.LookupTable(Vocab_relation,opt.dimension+opt.bi_dimension))
+  mlp2:add(relation_emb)
   -- mlp2:add(activition)
   mlp2:add(nn.Sum(1))
 
   prl=nn.ParallelTable();
-  prl:add(mlp1); prl:add(mlp2)
+  prl:add(sent); prl:add(mlp2)
 
   mlp1=nn.Sequential()
   mlp1:add(prl)
@@ -338,7 +338,8 @@ function train(dataset)
    end
    print('<trainer> saving network to '..filename)
    -- torch.save(filename, mlp1)
-
+   torch.save('../models/concat_relation_emb_200_epoch_'..epoch, relation_emb.weight)
+   torch.save('../models/concat_sent_emb_200_epoch_'..epoch, sent)
    -- next epoch
    epoch = epoch + 1
 end
@@ -410,6 +411,7 @@ function test2 ( testDataFileName,outPutFileName )
         question_code[2]=Vocab_word
       end
       local x=createSparseVector(question_code)
+      local x_emb=sent:forward(x)
       local score_table={}
       local index=1
       while true do
@@ -453,7 +455,12 @@ function test2 ( testDataFileName,outPutFileName )
       count = count+1
       local predicates_str = json.encode (predicates, { indent = true })
       -- Opens a file in write
-      outPutFile:write(table.concat({Q_text,Answers,predicates_str},"\t"),"\n")  
+      outPutFile:write(table.concat({Q_text,Answers,predicates_str},"\t"),"\n")
+      -- outPutFile:write(Q_text,"\n")
+      -- for i=1,x_emb:size()[1]-1 do
+      --   outPutFile:write(x_emb[i]," ")    
+      -- end
+      -- outPutFile:write(x_emb[x_emb:size()[1]],"\n")   
   end
   -- Print final results
   averageRecall = averageRecall / count

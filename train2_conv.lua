@@ -63,16 +63,16 @@ elseif opt.dataset=="web_dev" then
   trainData=torch.load('../data/train_random_web_soft_0.8_index.bin')
   Vocab_word=3114+1
   Vocab_relation=3358
-  word_emb_file='../data/pretrained_word_emb_dev_glove'
-  relation_emb_file='../data/pretrained_relation_emb_dev'
+  -- word_emb_file='../data/pretrained_word_emb_dev_glove'
+  -- relation_emb_file='../data/pretrained_relation_emb_dev'
   testFile="../data/dev_web_soft_code_list.txt"
   testDataSize=717
 elseif opt.dataset=="ws" then
   trainData=torch.load('../data/train_random_ws_soft_index.bin')
   Vocab_word=51230
   Vocab_relation=6769
-  testFile="../data/test_ws_soft_code_list.txt"
-  testDataSize=1918
+  testFile="../data/test_ws_soft_code_list_low.txt"
+  testDataSize=1921
 else
   print("no that dataset")
   return
@@ -81,18 +81,20 @@ outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
 
 if opt.network == '' then
   -- define model to train
-  mlp1=nn.Sequential()
-  mlp1:add(nn.LookupTable(Vocab_word,opt.dimension))
+  relation_emb=nn.LookupTable(Vocab_relation,opt.dimension)
+
+  sent=nn.Sequential()
+  sent:add(nn.LookupTable(Vocab_word,opt.dimension))
   kw=opt.kw
-  mlp1:add(nn.TemporalConvolution(opt.dimension,opt.relation_dimension,kw,1))
-  mlp1:add(nn.Sum(1))
+  sent:add(nn.TemporalConvolution(opt.dimension,opt.relation_dimension,kw,1))
+  sent:add(nn.Sum(1))
 
   mlp2=nn.Sequential()
-  mlp2:add(nn.LookupTable(Vocab_relation,opt.relation_dimension))
+  mlp2:add(relation_emb)
   mlp2:add(nn.Sum(1))
 
   prl=nn.ParallelTable();
-  prl:add(mlp1); prl:add(mlp2)
+  prl:add(sent); prl:add(mlp2)
 
   mlp1=nn.Sequential()
   mlp1:add(prl)
@@ -154,9 +156,6 @@ function train(dataset)
       for i = t,math.min(t+opt.batchSize-1,dataset:size()[1]) do
          -- load new sample
          local sample = dataset[shuffle[i]]
-         -- local input = sample[1]
-         -- local target = sample[2]
-         -- local input = {{sample[1],sample[2]},{sample[1],sample[3]}}
          local x=shrink(sample[1])
          if x:size()[1]>kw-1 then
            local y=shrink(sample[2])
@@ -306,7 +305,7 @@ function train(dataset)
    end
    print('<trainer> saving network to '..filename)
    -- torch.save(filename, mlp1)
-
+   torch.save('../models/conv_relation_emb_100_epoch_'..epoch, relation_emb.weight)
    -- next epoch
    epoch = epoch + 1
 end
