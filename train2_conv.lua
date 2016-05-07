@@ -306,6 +306,7 @@ function train(dataset)
    print('<trainer> saving network to '..filename)
    -- torch.save(filename, mlp1)
    torch.save('../models/conv_relation_emb_100_epoch_'..epoch, relation_emb.weight)
+   torch.save('../models/conv_sent_emb_100_epoch_'..epoch, sent)
    -- next epoch
    epoch = epoch + 1
 end

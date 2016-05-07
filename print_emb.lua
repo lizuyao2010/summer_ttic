@@ -1,8 +1,8 @@
 require "nn"
-sent=torch.load("../models/concat_sent_emb_200_epoch_2")
+sent=torch.load("../models/multi_sent_emb_100_epoch_2")
 testFile="../data/encoded_questions.txt"
 opt={}
-outPutFileName="../models/sent.emb"
+outPutFileName="../models/sent_multi.emb"
 testDataSize=11620/2
 -- test function
 function test2 ( testDataFileName,outPutFileName )
@@ -34,7 +34,7 @@ function test2 ( testDataFileName,outPutFileName )
       end  
   end
   -- close output file
-  inputFileName="../models/concat_relation_emb_200_epoch_2"
+  inputFileName="../models/multi_relation_emb_100_epoch_2"
   emb=torch.load(inputFileName)
   dictionFileName='../data/ind2relation_ws_soft.json'
   local dic=io.input(dictionFileName)

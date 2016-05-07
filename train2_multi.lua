@@ -98,20 +98,20 @@ outPutFileName="../data/fb_test_out." .. opt.dataset .. opt.batchSize .. ".txt"
 
 if opt.network == '' then
   -- define model to train
-  mlp1=nn.Sequential()
+  mlp11=nn.Sequential()
   word_emb=nn.LookupTable(Vocab_word,opt.dimension)
   relation_emb=nn.LookupTable(Vocab_relation,opt.relation_dimension)
 
-  mlp1:add(word_emb)
-  mlp1:add(nn.Sum(1))
-  mlp1:add(nn.Dropout(opt.dropout))  
-  mlp1:add(nn.Linear(opt.dimension,opt.relation_dimension))
+  mlp11:add(word_emb)
+  mlp11:add(nn.Sum(1))
+  mlp11:add(nn.Dropout(opt.dropout))  
+  mlp11:add(nn.Linear(opt.dimension,opt.relation_dimension))
   mlp2=nn.Sequential()
   mlp2:add(relation_emb)
   mlp2:add(nn.Sum(1))
 
   prl=nn.ParallelTable();
-  prl:add(mlp1); prl:add(mlp2)
+  prl:add(mlp11); prl:add(mlp2)
 
   mlp1=nn.Sequential()
   mlp1:add(prl)
@@ -128,8 +128,8 @@ if opt.network == '' then
   parameters,gradParameters = model:getParameters()
   parameters:uniform(-0.08, 0.08)
   -- verbose
-  -- print('<qa> using model:')
-  -- print(model)
+  print('<qa> using model:')
+  print(model)
 
   -- set criterion
   -- local margin=opt.margin
@@ -163,8 +163,8 @@ function train(dataset)
    -- shuffle = torch.randperm(dataset:size())
    shuffle = torch.randperm(dataset:size()[1])
    -- do one epoch
-   -- print('<trainer> on training set:')
-   -- print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
+   print('<trainer> on training set:')
+   print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
    for t = 1,dataset:size()[1],opt.batchSize do
       -- create mini batch
       local inputs = {}
@@ -276,7 +276,7 @@ function train(dataset)
          optim.adagrad(feval,parameters,adagradState)
          
          -- disp progress
-         -- xlua.progress(t, dataset:size()[1])
+         xlua.progress(t, dataset:size()[1])
       
       elseif opt.optimization == 'ADAM' then
          local adam_state = {}
@@ -308,10 +308,10 @@ function train(dataset)
    -- time taken
    time = sys.clock() - time
    time = time / dataset:size()[1]
-   -- print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
+   print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
    -- print confusion matrix
-   -- print(confusion)
+   print(confusion)
    trainLogger:add{['% mean class accuracy (train set)'] = confusion.totalValid * 100}
    confusion:zero()
 
@@ -323,7 +323,8 @@ function train(dataset)
    end
    -- print('<trainer> saving network to '..filename)
    -- torch.save(filename, mlp1)
-
+   torch.save('../models/multi_relation_emb_100_epoch_'..epoch, relation_emb.weight)
+   torch.save('../models/multi_sent_emb_100_epoch_'..epoch, mlp11)
    -- next epoch
    epoch = epoch + 1
 end
@@ -439,14 +440,12 @@ function test2 ( testDataFileName,outPutFileName )
   averageRecall = averageRecall / count
   averagePrecision = averagePrecision / count
   averageF1 = averageF1 / count
-  -- print ("Number of questions: ", count)
-  -- print ("Average recall over questions: ",averageRecall)
-  -- print ("Average precision over questions: " ,averagePrecision)
-  -- print ("Average f1 over questions (accuracy): ", averageF1)
-  -- print(averageF1)
+  print ("Number of questions: ", count)
+  print ("Average recall over questions: ",averageRecall)
+  print ("Average precision over questions: " ,averagePrecision)
+  print ("Average f1 over questions (accuracy): ", averageF1)
   averageNewF1 = 2 * averageRecall * averagePrecision / (averagePrecision + averageRecall)
-  -- print ("F1 of average recall and average precision: ", averageNewF1)
-  print(averageNewF1)
+  print ("F1 of average recall and average precision: ", averageNewF1)
   -- close output file
   outPutFile:close()
 end
