@@ -1,3 +1,5 @@
+# run the code
+lua train2.lua
 # torch code for question answering with freebase
 #method1:
 quesiton embedding and answer path embedding  
